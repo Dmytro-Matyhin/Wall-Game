@@ -1,28 +1,44 @@
 import React from 'react';
+import { 
+  findIndex as _findIndex,
+  cloneDeep as _cloneDeep,
+} from 'lodash';
 
 import createField from '../utils/create-field';
-import cloneField from '../utils/clone-field';
-import cloneArray from '../utils/clone-array';
-import findTileIndex from '../utils/find-tile-index';
+import randomNumber from '../utils/get-random-number';
 import deleteIndex from '../utils/delete-index';
-import genNum from '../utils/generate-random-number';
+import existsZeroInField from '../utils/exists-zero-in-field';
+import findBounds from '../utils/find-bounds.js';
+import allCellsAreInBounds from '../utils/all-cells-are-in-bounds';
+
+const findArrayIndex = (array, y, x) => _findIndex(array, tile => tile.x === x && tile.y === y);
+
+const FIELD_WIDTH = 10;
+const FIELD_HEIGHT = 10;
+const RANDOM_NUMBER_MIN = 1;
+const RANDOM_NUMBER_MAX = 7;
 
 export default class App extends React.Component {
-  constructor (props) {
+  constructor(props) {
     super(props);
-    const showRandNumb = genNum(1, 6);
 
-    this.state = {
-      'player-1': createField(10, 10),
-      'player-2': createField(10, 10),
+    this.state = this.getInitialState();
+  }
+
+  getInitialState = () => {
+    const twoRandomNum = randomNumber(RANDOM_NUMBER_MIN, RANDOM_NUMBER_MAX);
+
+    return {
+      'player-1': createField(FIELD_WIDTH, FIELD_HEIGHT),
+      'player-2': createField(FIELD_WIDTH, FIELD_HEIGHT),
       currentPlayer: 'player-1',
-      currentRandom1: showRandNumb[0],
-      currentRandom2: showRandNumb[1],
       currentPlayerTurn: [],
+      randomNumbers: twoRandomNum,
+      winner: null,
     };
   }
 
-  onTileClick = (x, y, player) => {
+  onTileClick = (player, y, x) => {
     if (player !== this.state.currentPlayer) {
       return;
     }
@@ -31,151 +47,180 @@ export default class App extends React.Component {
       return;
     }
 
-    const existingTileIndex = findTileIndex(this.state.currentPlayerTurn, x, y);
+    const existingTileIndex = findArrayIndex(this.state.currentPlayerTurn, y, x);
 
     if (existingTileIndex !== -1) {
       const newCurrentPlayerTurn = deleteIndex(this.state.currentPlayerTurn, existingTileIndex);
       
-      this.setState({ currentPlayerTurn: newCurrentPlayerTurn });
+      this.setState({
+        currentPlayerTurn: newCurrentPlayerTurn,
+      });
+      
+      return;
+    }
+
+    const currentPlayerMove = _cloneDeep(this.state.currentPlayerTurn);
+    const temporaryTile = {x, y};
+
+    currentPlayerMove.push(temporaryTile);
+
+    this.setState({
+      currentPlayerTurn: currentPlayerMove,
+    });
+  }
+
+  onTurnClick = () => {
+    if (this.state.currentPlayerTurn.length === 0) {
+
+      this.setState({
+        currentPlayer: this.state.currentPlayer === 'player-1' ? 'player-2' : 'player-1',
+        randomNumbers: randomNumber(RANDOM_NUMBER_MIN, RANDOM_NUMBER_MAX)
+      });
 
       return;
     }
 
-    const newCurrentPlayerTurn = cloneArray(this.state.currentPlayerTurn);
-    const tempTile = { x, y };
-    newCurrentPlayerTurn.push(tempTile);
+    const newPlayerField = _cloneDeep(this.state[this.state.currentPlayer]);
 
-    this.setState({ currentPlayerTurn: newCurrentPlayerTurn });
-  }
+    this.state.currentPlayerTurn.forEach(tile => {
+      newPlayerField[tile.y][tile.x] = 1;
+    });
 
-  checkPlayerMove = () => {
-    const { currentPlayerTurn, currentPlayer } = this.state;
-    const clonePlayerField = cloneField(this.state[currentPlayer]);
+    const bounds = findBounds(this.state.currentPlayerTurn);
 
-    for (let i = 0; i < currentPlayerTurn.length; i++) {
-      const tileCoords = currentPlayerTurn[i];
-
-      clonePlayerField[tileCoords.y][tileCoords.x] = 1;
+    if (!bounds) {
+      return;
     }
 
-    const showRandNumb = genNum(1, 6);
+    const topLeft = bounds[0];
+    const bottomRight = bounds[1];
+    
+    const length = (bottomRight.x - topLeft.x) + 1;
+    const height = (bottomRight.y - topLeft.y) + 1;
+
+    if (length !== this.state.randomNumbers[0] || height !== this.state.randomNumbers[1]) {
+      return;
+    }
+
+    if (!allCellsAreInBounds(this.state.currentPlayerTurn, topLeft, bottomRight)) {
+      return;
+    }
+
+    if (length * height !== this.state.currentPlayerTurn.length) {
+      return;
+    }
 
     this.setState({
-      currentRandom1: showRandNumb[0],
-      currentRandom2: showRandNumb[1],
-      currentPlayer: currentPlayer === 'player-1' ? 'player-2' : 'player-1',
+      currentPlayer: this.state.currentPlayer === 'player-1' ? 'player-2' : 'player-1',
       currentPlayerTurn: [],
-      [currentPlayer]: clonePlayerField,
-    });
-  };
+      [this.state.currentPlayer]: newPlayerField, 
+      randomNumbers: randomNumber(RANDOM_NUMBER_MIN, RANDOM_NUMBER_MAX),
+      winner: existsZeroInField(newPlayerField) ? this.state.currentPlayer : null,
+    })
+  }
+
+  onResetClick = () => {
+    this.setState(this.getInitialState());
+  }
 
   render = () => {
     return (
-      <div>
+      <React.Fragment>
         <div>
           {
-            this.state['player-1'].map((row, x) => {
+            this.state['player-1'].map((row, y) => {
               return (
                 <div>
                   {
-                    row.map((tile, y) => {
-                      if (this.state.currentPlayer === 'player-1' && findTileIndex(this.state.currentPlayerTurn, y, x) !== -1) {
+                    row.map((cell, x) => {
+                      if (this.state.currentPlayer === 'player-1' && findArrayIndex(this.state.currentPlayerTurn, y, x) !== -1) {
                         return (
-                          <button 
-                          style={{
-                            width: '30px',
-                            height: '30px',
-                            outline: 'none',
-                            border: '1px solid #FF7400',
-                            backgroundColor: '#C81B1B'
-                          }}
-                          onClick={() => {
-                            this.onTileClick(y, x, 'player-1');
-                          }}
-                        >
-                        </button>
-                          )
-                      }
-
-                      return (
-                        <button 
-                          style={{
-                            width: '30px',
-                            height: '30px',
-                            outline: 'none',
-                            border: '1px solid #FF7400',
-                            backgroundColor: tile === 0 ? 'white' : '#C81B1B'
-                          }}
-                          onClick={() => {
-                            this.onTileClick(y, x, 'player-1');
-                          }}
-                        >
-                        </button>
-                      );
-                    })
-                  }
-                </div>
-              )
-            })
-          }
-        </div>
-        <div>
-          {
-            this.state['player-2'].map((row, y) => {
-              return (
-                <div>
-                  {
-                    row.map((tile, x) => {
-                      if(this.state.currentPlayer === 'player-2' && findTileIndex(this.state.currentPlayerTurn, x, y) !== -1) {
-                        return(
                           <button
                             style={{
                               width: '30px',
                               height: '30px',
                               outline: 'none',
-                              border: '1px solid #3344F8',
-                              backgroundColor: '#0D1EC5'
+                              border: '1px solid black',
+                              backgroundColor: '#ff7070',
                             }}
-                            onClick={() => {
-                              this.onTileClick(x, y, 'player-2');
-                            }}
-                            >
+                            onClick ={() => this.onTileClick('player-1', y, x)} 
+                          >
                           </button>
-                          )
+                        )
                       }
 
                       return (
-                        <button 
+                        <button
+                          style={{
+                            width: '30px',
+                            height: '30px',
+                            outline: 'none',
+                            border: '1px solid #FF7400',
+                            backgroundColor: cell !== 0 ? '#C81B1B' : 'white',
+                          }}
+                          onClick={() => this.onTileClick('player-1', y, x)} 
+                          >
+                        </button>
+                      );
+                    })
+                  }
+                  </div>
+                )
+              }) 
+            }     
+        </div>
+        <div>
+        {
+          this.state['player-2'].map((row, y) =>
+            <div>
+              {
+                row.map((cell, x) => {
+                  if (this.state.currentPlayer === 'player-2' && findArrayIndex(this.state.currentPlayerTurn, y, x) !== -1) {
+                    return (
+                      <button
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          outline: 'none',
+                          border: '1px solid black',
+                          backgroundColor: '#7094ff',
+                        }}
+                        onClick ={() => this.onTileClick('player-2', y, x)} 
+                      >
+                      </button>
+                    )
+                  }
+                    
+                    return (
+                      <button
                         style={{
                           width: '30px',
                           height: '30px',
                           outline: 'none',
                           border: '1px solid #3344F8',
-                          backgroundColor: tile === 0 ? 'white' : '#0D1EC5'
+                          backgroundColor: cell !== 0 ? '#0D1EC5' : 'white',
                         }}
-                          onClick={() => {
-                            this.onTileClick(x, y, 'player-2');
-                          }}
-                        >
-                        </button>
-                      );
-                    })
-                  }
-                </div>
-              )
-            })
-          }
+                        onClick ={() => this.onTileClick('player-2', y, x)} 
+                      >
+                      </button>
+                    );
+                  })
+                }
+            </div>
+          )
+        }      
         </div>
-
-        <div>
-          <button onClick={this.checkPlayerMove}>
-            {'FINISH MOVE'}
-          </button>
-          <p>{this.state.currentPlayer}</p>
-          <p>{`Random number 1: ${this.state.currentRandom1}`}</p>
-          <p>{`Random number 2: ${this.state.currentRandom2}`}</p>
-        </div>
-      </div>
-    );
-  };
+        <button onClick={this.onResetClick}>{'Reset'}</button>
+        {
+          this.state.winner || <button onClick={this.onTurnClick}>{'End turn'}</button>
+        }
+        <p>{this.state.currentPlayer}</p>
+        <p>{this.state.randomNumbers[0]}</p>
+        <p>{this.state.randomNumbers[1]}</p>
+        {
+          this.state.winner && <p>{`The winner is ${this.state.winner}`}</p>
+        }
+      </React.Fragment>
+    )
+  }
 }
